@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>POS Kasir Barcode - Edit Qty di Keranjang</title>
+  <title>POS Kasir Barcode - Plus Minus Keranjang</title>
   <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
@@ -14,7 +14,7 @@
 <body class="bg-slate-100 font-sans text-slate-800 min-h-screen flex flex-col">
 
   <script>
-    // URL Web App Google Apps Script Anda yang sudah benar sesuai tangkapan layar
+    // URL Web App Google Apps Script Anda yang sudah benar sesuai database Anda
     const API_URL = "https://script.google.com/macros/s/AKfycbx9GXJBNZhXVgN5HalK9tsQw_b4DKf-1ANFWGPwJu2VslbUiAtFkNVCMg7is0YyuXHR/exec";
   </script>
 
@@ -72,7 +72,7 @@
             <thead class="bg-slate-50 text-slate-600 uppercase text-xs">
               <tr>
                 <th class="p-3">Nama</th>
-                <th class="p-3 text-center style='width: 120px;'">Qty</th>
+                <th class="p-3 text-center" style="width: 160px;">Qty</th>
                 <th class="p-3 text-right">Harga</th>
                 <th class="p-3 text-right">Subtotal</th>
                 <th class="p-3 text-center">Aksi</th>
@@ -129,6 +129,8 @@
     let currentTotalBelanja = 0;
     let html5QrcodeScanner = null;
     let isScanning = false;
+    let lastScannedCode = "";
+    let lastScannedTime = 0;
 
     document.addEventListener("DOMContentLoaded", function() { muatDataAwal(); });
 
@@ -192,22 +194,48 @@
           { facingMode: "environment" }, 
           { fps: 15, qrbox: (w, h) => ({ width: w*0.8, height: h*0.5 }) },
           (text) => {
-            if (navigator.vibrate) navigator.vibrate(100);
+            const now = Date.now();
             const barcodeScanned = text.trim();
+            
+            // Mencegah double scan berturut-turut dalam waktu 2 detik untuk kode yang sama
+            if (barcodeScanned === lastScannedCode && (now - lastScannedTime < 2000)) {
+              return; 
+            }
+            
+            lastScannedCode = barcodeScanned;
+            lastScannedTime = now;
+
+            if (navigator.vibrate) navigator.vibrate(100);
+            
             const prod = daftarProdukMaster.find(p => p.id === barcodeScanned);
             if (prod) {
               document.getElementById("select-produk").value = prod.id;
               updateDetailProdukPilihan();
-              tambahKeKeranjang();
+              // Khusus SCAN BARCODE: Hanya memasukkan tepat 1 Qty ke keranjang
+              tambahDariBarcode(prod);
             } else { 
               alert("Barcode '" + barcodeScanned + "' tidak ditemukan di tab Produk!"); 
             }
           }
         ).catch((err) => { 
-          alert("Gagal mengakses kamera. Jika pakai HP, pastikan membuka lewat link HTTPS (bukan file lokal)!"); 
+          alert("Gagal mengakses kamera. Jika pakai HP, pastikan membuka lewat link HTTPS!"); 
           toggleScanner(); 
         });
       }
+    }
+
+    // Fungsi khusus menangani input barcode agar tepat masuk 1 Qty
+    function tambahDariBarcode(p) {
+      let exist = keranjangBelanja.find(item => item.id === p.id);
+      if(exist) {
+        if(exist.qty + 1 > p.stok) { alert("Stok di Google Sheets tidak mencukupi!"); return; }
+        exist.qty += 1;
+        exist.subtotal = exist.qty * exist.harga;
+      } else {
+        keranjangBelanja.push({ id: p.id, nama: p.nama, harga: p.harga, qty: 1, subtotal: p.harga });
+      }
+      clearInputProduk();
+      renderKeranjang();
     }
 
     function tambahKeKeranjang() {
@@ -227,29 +255,51 @@
       } else {
         keranjangBelanja.push({ id: p.id, nama: p.nama, harga: p.harga, qty: qty, subtotal: qty * p.harga });
       }
-      
+      clearInputProduk();
+      renderKeranjang();
+    }
+
+    function clearInputProduk() {
       document.getElementById("select-produk").value = "";
       document.getElementById("input-qty").value = "1";
       updateDetailProdukPilihan();
+    }
+
+    // FUNGSI UTAMA BARU: Tombol Plus (+) dan Minus (-) di dalam tabel keranjang
+    function sesuaikanQtyKlik(id, arah) {
+      let item = keranjangBelanja.find(i => i.id === id);
+      const p = daftarProdukMaster.find(prod => prod.id === id);
+      if (!item || !p) return;
+
+      let qtyBaru = item.qty + arah;
+
+      if (qtyBaru < 1) {
+        alert("Jumlah minimal adalah 1! Gunakan ikon sampah di kanan jika ingin menghapus produk.");
+        return;
+      }
+
+      if (qtyBaru > p.stok) {
+        alert(`Stok tidak mencukupi! Batas stok di Google Sheets adalah ${p.stok}`);
+        return;
+      }
+
+      item.qty = qtyBaru;
+      item.subtotal = qtyBaru * item.harga;
       
       renderKeranjang();
     }
 
-    // FUNGSI BARU: Mengubah jumlah Qty langsung dari keranjang
-    function ubahQtyDiKeranjang(id, elemenInput) {
+    function ubahQtyKetikManual(id, elemenInput) {
       let qtyBaru = parseInt(elemenInput.value);
       const p = daftarProdukMaster.find(prod => prod.id === id);
       
       if (isNaN(qtyBaru) || qtyBaru < 1) {
-        alert("Jumlah minimal adalah 1 barang!");
         qtyBaru = 1;
-        elemenInput.value = 1;
       }
       
       if (qtyBaru > p.stok) {
-        alert(`Stok tidak mencukupi! Stok maksimal untuk barang ini adalah ${p.stok}`);
+        alert(`Stok maksimal hanya ${p.stok}!`);
         qtyBaru = p.stok;
-        elemenInput.value = p.stok;
       }
       
       let item = keranjangBelanja.find(i => i.id === id);
@@ -258,42 +308,37 @@
         item.subtotal = qtyBaru * item.harga;
       }
       
-      // Hitung ulang total harga keseluruhan tanpa menggambar ulang seluruh tabel biar ketikan tidak putus
-      hitungTotalDanKembalianUlang();
-    }
-
-    function hitungTotalDanKembalianUlang() {
       currentTotalBelanja = 0;
-      keranjangBelanja.forEach(item => {
-        currentTotalBelanja += item.subtotal;
-        // Update teks subtotal per baris secara instan
-        const elSubtotal = document.getElementById(`subtotal-${item.id}`);
-        if(elSubtotal) elSubtotal.innerText = formatRupiah(item.subtotal);
-      });
+      keranjangBelanja.forEach(i => currentTotalBelanja += i.subtotal);
+      document.getElementById(`subtotal-${id}`).innerText = formatRupiah(item.subtotal);
       document.getElementById("display-total").innerText = formatRupiah(currentTotalBelanja);
       hitungKembalian();
     }
 
     function renderKeranjang() {
       const tbody = document.getElementById("tabel-keranjang");
-      tbody.innerHTML = keranjangBelanja.length === 0 ? '<tr><td colspan="5" class="p-8 text-center text-slate-400 italic">Keranjang kosong</td></tr>' : '';
+      tbody.innerHTML = keranjangBelanja.length === 0 ? '<tr><td colspan="5" class="p-8 text-center text-slate-400 italic">Keranjang masih kosong</td></tr>' : '';
       currentTotalBelanja = 0;
       
       keranjangBelanja.forEach(item => {
         currentTotalBelanja += item.subtotal;
         let tr = document.createElement("tr");
         tr.innerHTML = `
-          <td class="p-3 font-medium">${item.nama}</td>
+          <td class="p-3 font-medium text-slate-700">${item.nama}</td>
           <td class="p-3 text-center">
-            <input type="number" value="${item.qty}" min="1" 
-              class="w-16 p-1 border border-slate-300 rounded text-center bg-slate-50 focus:bg-white font-semibold"
-              oninput="ubahQtyDiKeranjang('${item.id}', this)"
-              onchange="renderKeranjang()">
+            <div class="flex items-center justify-center gap-1">
+              <button onclick="sesuaikanQtyKlik('${item.id}', -1)" class="w-7 h-7 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded font-bold transition flex items-center justify-center cursor-pointer text-xs select-none">-</button>
+              <input type="number" value="${item.qty}" 
+                class="w-12 h-7 border border-slate-300 rounded text-center bg-white font-semibold text-sm focus:outline-none"
+                oninput="ubahQtyKetikManual('${item.id}', this)"
+                onchange="renderKeranjang()">
+              <button onclick="sesuaikanQtyKlik('${item.id}', 1)" class="w-7 h-7 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded font-bold transition flex items-center justify-center cursor-pointer text-xs select-none">+</button>
+            </div>
           </td>
-          <td class="p-3 text-right">${formatRupiah(item.harga)}</td>
+          <td class="p-3 text-right text-slate-600">${formatRupiah(item.harga)}</td>
           <td class="p-3 text-right font-bold text-indigo-600" id="subtotal-${item.id}">${formatRupiah(item.subtotal)}</td>
           <td class="p-3 text-center">
-            <button onclick="hapus('${item.id}')" class="text-rose-500 cursor-pointer hover:text-rose-700"><i class="fa-solid fa-trash"></i></button>
+            <button onclick="hapus('${item.id}')" class="text-rose-500 cursor-pointer hover:text-rose-700 p-1"><i class="fa-solid fa-trash"></i></button>
           </td>
         `;
         tbody.appendChild(tr);
