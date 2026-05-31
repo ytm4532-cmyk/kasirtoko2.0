@@ -3,24 +3,29 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>POS Kasir Barcode - Plus Minus Keranjang</title>
+  <title>POS Kasir Barcode Pro - Struk & Qty Detail</title>
   <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
   <style>
     input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    @media print {
+      body * { visibility: hidden; }
+      #area-cetak-struk, #area-cetak-struk * { visibility: visible; }
+      #area-cetak-struk { position: absolute; left: 0; top: 0; width: 58mm; }
+    }
   </style>
 </head>
 <body class="bg-slate-100 font-sans text-slate-800 min-h-screen flex flex-col">
 
   <script>
-    // URL Web App Google Apps Script Anda yang sudah benar sesuai database Anda
+    // URL Web App Google Apps Script Anda
     const API_URL = "https://script.google.com/macros/s/AKfycbx9GXJBNZhXVgN5HalK9tsQw_b4DKf-1ANFWGPwJu2VslbUiAtFkNVCMg7is0YyuXHR/exec";
   </script>
 
   <header class="bg-indigo-600 text-white shadow-md p-4">
     <div class="container mx-auto flex justify-between items-center">
-      <h1 class="text-xl font-bold flex items-center gap-2"><i class="fa-solid fa-cash-register"></i> POS Kasir Barcode</h1>
+      <h1 class="text-xl font-bold flex items-center gap-2"><i class="fa-solid fa-cash-register"></i> POS Kasir Barcode PRO</h1>
       <div class="bg-indigo-700 px-4 py-2 rounded-lg font-mono text-sm shadow-inner" id="display-trx-id">Menghubungkan ke Sheets...</div>
     </div>
   </header>
@@ -55,9 +60,14 @@
               <span class="text-base font-bold" id="info-stok">0</span>
             </div>
           </div>
+
           <div class="mb-6">
-            <label class="block text-sm font-medium text-slate-600 mb-1">Jumlah Beli (Qty)</label>
-            <input type="number" id="input-qty" value="1" min="1" class="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg text-center font-semibold">
+            <label class="block text-sm font-medium text-slate-600 mb-1 text-center">Jumlah Beli (Qty)</label>
+            <div class="flex items-center justify-center gap-2 max-w-[200px] mx-auto">
+              <button onclick="sesuaikanQtyDetail(-1)" class="w-10 h-10 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-lg font-bold text-lg select-none cursor-pointer">-</button>
+              <input type="number" id="input-qty" value="1" min="1" class="w-16 h-10 border border-slate-300 rounded-lg text-center font-bold text-lg bg-slate-50 focus:bg-white">
+              <button onclick="sesuaikanQtyDetail(1)" class="w-10 h-10 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded-lg font-bold text-lg select-none cursor-pointer">+</button>
+            </div>
           </div>
         </div>
         <button onclick="tambahKeKeranjang()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-lg cursor-pointer">Tambah ke Keranjang</button>
@@ -72,7 +82,7 @@
             <thead class="bg-slate-50 text-slate-600 uppercase text-xs">
               <tr>
                 <th class="p-3">Nama</th>
-                <th class="p-3 text-center" style="width: 160px;">Qty</th>
+                <th class="p-3 text-center" style="width: 140px;">Qty</th>
                 <th class="p-3 text-right">Harga</th>
                 <th class="p-3 text-right">Subtotal</th>
                 <th class="p-3 text-center">Aksi</th>
@@ -93,7 +103,7 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label class="block text-sm font-medium text-slate-600 mb-1">Metode Pembayaran</label>
-            <select id="select-metode" class="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg">
+            <select id="select-metode" class="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg" onchange="handleMetodeBayarChange()">
               <option value="Cash">Cash (Tunai)</option>
               <option value="QRIS">QRIS</option>
               <option value="Transfer">Transfer</option>
@@ -104,6 +114,15 @@
             <input type="number" id="input-bayar" class="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg text-right font-bold text-lg text-emerald-600" oninput="hitungKembalian()">
           </div>
         </div>
+
+        <div id="box-konfirmasi-nontunai" class="mt-4 p-4 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-lg flex items-start gap-2 hidden">
+          <i class="fa-solid fa-circle-exclamation mt-0.5 text-amber-500"></i>
+          <div>
+            <strong class="block">Konfirmasi Saldo Masuk:</strong>
+            Harap pastikan uang mutasi masuk ke akun Bank/Dana Anda senilai <span id="text-nominal-nontunai" class="font-bold">Rp 0</span> sebelum menekan tombol Selesai.
+          </div>
+        </div>
+
         <div class="mt-4 p-4 bg-slate-50 rounded-lg flex justify-between items-center">
           <span class="text-sm">Uang Kembalian:</span>
           <span class="text-xl font-mono font-bold" id="display-kembalian">Rp 0</span>
@@ -118,8 +137,32 @@
       <div id="modal-icon" class="text-4xl mb-3"><i class="fa-solid fa-circle-notch animate-spin text-indigo-600"></i></div>
       <h3 id="modal-title" class="text-lg font-bold mb-1">Memproses...</h3>
       <p id="modal-message" class="text-sm text-slate-500 mb-4">Mohon tunggu.</p>
-      <button id="modal-btn-close" onclick="tutupModal()" class="hidden w-full bg-slate-800 text-white py-2 rounded-lg">OK</button>
+      <div class="flex gap-2" id="modal-action-buttons">
+        <button id="modal-btn-close" onclick="tutupModal()" class="hidden w-full bg-slate-800 text-white py-2 rounded-lg cursor-pointer">OK</button>
+        <button id="modal-btn-cetak" onclick="cetakStrukFisik()" class="hidden w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg font-bold cursor-pointer"><i class="fa-solid fa-print mr-1"></i> Cetak Struk</button>
+      </div>
     </div>
+  </div>
+
+  <div id="area-cetak-struk" class="hidden text-black font-mono text-xs p-2 bg-white" style="width: 58mm;">
+    <div class="text-center font-bold text-sm mb-1">TOKO SAYA</div>
+    <div class="text-center mb-2 text-[10px]">Jl. Raya Utama No. 123<br>Telp: 08123456789</div>
+    <div class="border-b border-dashed border-black my-1"></div>
+    <div class="text-[10px] mb-1">
+      ID: <span id="st-id">TRX-000</span><br>
+      Tgl: <span id="st-tgl">00/00/00</span><br>
+      Jenis: <span id="st-metode">Cash</span>
+    </div>
+    <div class="border-b border-dashed border-black my-1"></div>
+    <table class="w-full text-[10px]">
+      <tbody id="st-items"></tbody>
+    </table>
+    <div class="border-b border-dashed border-black my-1"></div>
+    <div class="flex justify-between font-bold text-[11px]"><span>TOTAL:</span><span id="st-total">Rp 0</span></div>
+    <div class="flex justify-between text-[10px]"><span>BAYAR:</span><span id="st-bayar">Rp 0</span></div>
+    <div class="flex justify-between text-[10px]"><span>KEMBALI:</span><span id="st-kembali">Rp 0</span></div>
+    <div class="border-b border-dashed border-black my-1"></div>
+    <div class="text-center text-[9px] mt-2 font-bold">*** TERIMA KASIH ***<br>Barang yang sudah dibeli tidak dapat ditukar</div>
   </div>
 
   <script>
@@ -131,6 +174,7 @@
     let isScanning = false;
     let lastScannedCode = "";
     let lastScannedTime = 0;
+    let dataTransaksiTerakhir = null;
 
     document.addEventListener("DOMContentLoaded", function() { muatDataAwal(); });
 
@@ -151,14 +195,13 @@
         })
         .catch(err => { 
           console.error(err);
-          showErrorModal("Error Koneksi", "Gagal mengambil data dari Google Sheets. Periksa Deploy & Nama Tab!"); 
+          showErrorModal("Error Koneksi", "Gagal menyinkronkan database."); 
         });
     }
 
     function isiDropdownProduk(list) {
       const datalist = document.getElementById("daftar-produk-datalist");
       datalist.innerHTML = ''; 
-      
       list.forEach(p => {
         if(p.stok > 0) {
           let opt = document.createElement("option");
@@ -172,9 +215,28 @@
     function updateDetailProdukPilihan() {
       const inputVal = document.getElementById("select-produk").value.trim();
       const p = daftarProdukMaster.find(prod => prod.id === inputVal);
-      
       document.getElementById("info-harga").innerText = p ? formatRupiah(p.harga) : "Rp 0";
       document.getElementById("info-stok").innerText = p ? p.stok : "0";
+      document.getElementById("input-qty").value = "1";
+    }
+
+    // FITUR REVISI: Fungsi tombol plus-minus untuk kolom Detail Produk
+    function sesuaikanQtyDetail(arah) {
+      const inputQty = document.getElementById("input-qty");
+      let qtySaatIni = parseInt(inputQty.value) || 1;
+      let qtyBaru = qtySaatIni + arah;
+      const id = document.getElementById("select-produk").value.trim();
+      
+      if(qtyBaru < 1) qtyBaru = 1;
+      
+      if(id) {
+        const p = daftarProdukMaster.find(prod => prod.id === id);
+        if(p && qtyBaru > p.stok) {
+          alert(`Stok produk terbatas! Stok maksimal hanya tersisa ${p.stok}`);
+          qtyBaru = p.stok;
+        }
+      }
+      inputQty.value = qtyBaru;
     }
 
     function toggleScanner() {
@@ -196,45 +258,32 @@
           (text) => {
             const now = Date.now();
             const barcodeScanned = text.trim();
-            
-            // Mencegah double scan berturut-turut dalam waktu 2 detik untuk kode yang sama
-            if (barcodeScanned === lastScannedCode && (now - lastScannedTime < 2000)) {
-              return; 
-            }
+            if (barcodeScanned === lastScannedCode && (now - lastScannedTime < 2000)) return; 
             
             lastScannedCode = barcodeScanned;
             lastScannedTime = now;
-
             if (navigator.vibrate) navigator.vibrate(100);
             
             const prod = daftarProdukMaster.find(p => p.id === barcodeScanned);
             if (prod) {
-              document.getElementById("select-produk").value = prod.id;
-              updateDetailProdukPilihan();
-              // Khusus SCAN BARCODE: Hanya memasukkan tepat 1 Qty ke keranjang
               tambahDariBarcode(prod);
             } else { 
-              alert("Barcode '" + barcodeScanned + "' tidak ditemukan di tab Produk!"); 
+              alert("Barcode tidak ditemukan di sistem!"); 
             }
           }
-        ).catch((err) => { 
-          alert("Gagal mengakses kamera. Jika pakai HP, pastikan membuka lewat link HTTPS!"); 
-          toggleScanner(); 
-        });
+        ).catch((err) => { alert("Gagal membuka akses kamera."); toggleScanner(); });
       }
     }
 
-    // Fungsi khusus menangani input barcode agar tepat masuk 1 Qty
     function tambahDariBarcode(p) {
       let exist = keranjangBelanja.find(item => item.id === p.id);
       if(exist) {
-        if(exist.qty + 1 > p.stok) { alert("Stok di Google Sheets tidak mencukupi!"); return; }
+        if(exist.qty + 1 > p.stok) { alert("Stok habis!"); return; }
         exist.qty += 1;
         exist.subtotal = exist.qty * exist.harga;
       } else {
         keranjangBelanja.push({ id: p.id, nama: p.nama, harga: p.harga, qty: 1, subtotal: p.harga });
       }
-      clearInputProduk();
       renderKeranjang();
     }
 
@@ -242,77 +291,37 @@
       const id = document.getElementById("select-produk").value.trim();
       if(!id) return;
       const p = daftarProdukMaster.find(prod => prod.id === id);
-      if(!p) { alert("Produk tidak valid!"); return; }
+      if(!p) return;
       
       const qty = parseInt(document.getElementById("input-qty").value) || 1;
-      if(qty > p.stok) { alert("Stok tidak mencukupi!"); return; }
+      if(qty > p.stok) { alert("Stok tidak memadai!"); return; }
       
       let exist = keranjangBelanja.find(item => item.id === id);
       if(exist) {
-        if(exist.qty + qty > p.stok) { alert("Total belanjaan melebihi stok tersedia!"); return; }
+        if(exist.qty + qty > p.stok) { alert("Melebihi total batas stok!"); return; }
         exist.qty += qty; 
         exist.subtotal = exist.qty * exist.harga;
       } else {
         keranjangBelanja.push({ id: p.id, nama: p.nama, harga: p.harga, qty: qty, subtotal: qty * p.harga });
       }
-      clearInputProduk();
-      renderKeranjang();
-    }
-
-    function clearInputProduk() {
       document.getElementById("select-produk").value = "";
       document.getElementById("input-qty").value = "1";
       updateDetailProdukPilihan();
+      renderKeranjang();
     }
 
-    // FUNGSI UTAMA BARU: Tombol Plus (+) dan Minus (-) di dalam tabel keranjang
-    function sesuaikanQtyKlik(id, arah) {
+    function sesuaikanQtyKeranjangKlik(id, arah) {
       let item = keranjangBelanja.find(i => i.id === id);
       const p = daftarProdukMaster.find(prod => prod.id === id);
       if (!item || !p) return;
 
       let qtyBaru = item.qty + arah;
-
-      if (qtyBaru < 1) {
-        alert("Jumlah minimal adalah 1! Gunakan ikon sampah di kanan jika ingin menghapus produk.");
-        return;
-      }
-
-      if (qtyBaru > p.stok) {
-        alert(`Stok tidak mencukupi! Batas stok di Google Sheets adalah ${p.stok}`);
-        return;
-      }
+      if (qtyBaru < 1) return;
+      if (qtyBaru > p.stok) { alert("Batas stok maksimum!"); return; }
 
       item.qty = qtyBaru;
       item.subtotal = qtyBaru * item.harga;
-      
       renderKeranjang();
-    }
-
-    function ubahQtyKetikManual(id, elemenInput) {
-      let qtyBaru = parseInt(elemenInput.value);
-      const p = daftarProdukMaster.find(prod => prod.id === id);
-      
-      if (isNaN(qtyBaru) || qtyBaru < 1) {
-        qtyBaru = 1;
-      }
-      
-      if (qtyBaru > p.stok) {
-        alert(`Stok maksimal hanya ${p.stok}!`);
-        qtyBaru = p.stok;
-      }
-      
-      let item = keranjangBelanja.find(i => i.id === id);
-      if (item) {
-        item.qty = qtyBaru;
-        item.subtotal = qtyBaru * item.harga;
-      }
-      
-      currentTotalBelanja = 0;
-      keranjangBelanja.forEach(i => currentTotalBelanja += i.subtotal);
-      document.getElementById(`subtotal-${id}`).innerText = formatRupiah(item.subtotal);
-      document.getElementById("display-total").innerText = formatRupiah(currentTotalBelanja);
-      hitungKembalian();
     }
 
     function renderKeranjang() {
@@ -327,29 +336,39 @@
           <td class="p-3 font-medium text-slate-700">${item.nama}</td>
           <td class="p-3 text-center">
             <div class="flex items-center justify-center gap-1">
-              <button onclick="sesuaikanQtyKlik('${item.id}', -1)" class="w-7 h-7 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded font-bold transition flex items-center justify-center cursor-pointer text-xs select-none">-</button>
-              <input type="number" value="${item.qty}" 
-                class="w-12 h-7 border border-slate-300 rounded text-center bg-white font-semibold text-sm focus:outline-none"
-                oninput="ubahQtyKetikManual('${item.id}', this)"
-                onchange="renderKeranjang()">
-              <button onclick="sesuaikanQtyKlik('${item.id}', 1)" class="w-7 h-7 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded font-bold transition flex items-center justify-center cursor-pointer text-xs select-none">+</button>
+              <button onclick="sesuaikanQtyKeranjangKlik('${item.id}', -1)" class="w-7 h-7 bg-slate-200 text-slate-700 rounded font-bold text-xs cursor-pointer">-</button>
+              <input type="number" value="${item.qty}" class="w-10 h-7 border border-slate-300 rounded text-center bg-white text-xs font-semibold" readonly>
+              <button onclick="sesuaikanQtyKeranjangKlik('${item.id}', 1)" class="w-7 h-7 bg-indigo-100 text-indigo-700 rounded font-bold text-xs cursor-pointer">+</button>
             </div>
           </td>
-          <td class="p-3 text-right text-slate-600">${formatRupiah(item.harga)}</td>
-          <td class="p-3 text-right font-bold text-indigo-600" id="subtotal-${item.id}">${formatRupiah(item.subtotal)}</td>
-          <td class="p-3 text-center">
-            <button onclick="hapus('${item.id}')" class="text-rose-500 cursor-pointer hover:text-rose-700 p-1"><i class="fa-solid fa-trash"></i></button>
-          </td>
+          <td class="p-3 text-right">${formatRupiah(item.harga)}</td>
+          <td class="p-3 text-right font-bold text-indigo-600">${formatRupiah(item.subtotal)}</td>
+          <td class="p-3 text-center"><button onclick="hapus('${item.id}')" class="text-rose-500 hover:text-rose-700 cursor-pointer"><i class="fa-solid fa-trash"></i></button></td>
         `;
         tbody.appendChild(tr);
       });
       document.getElementById("display-total").innerText = formatRupiah(currentTotalBelanja);
-      hitungKembalian();
+      handleMetodeBayarChange();
     }
 
-    function hapus(id) { 
-      keranjangBelanja = keranjangBelanja.filter(i => i.id !== id); 
-      renderKeranjang(); 
+    function hapus(id) { keranjangBelanja = keranjangBelanja.filter(i => i.id !== id); renderKeranjang(); }
+
+    // FITUR REVISI: Mengatur perubahan notifikasi pembayaran nontunai
+    function handleMetodeBayarChange() {
+      const metode = document.getElementById("select-metode").value;
+      const boxNontunai = document.getElementById("box-konfirmasi-nontunai");
+      const inputBayar = document.getElementById("input-bayar");
+
+      if (metode !== "Cash") {
+        inputBayar.value = currentTotalBelanja;
+        inputBayar.setAttribute("readonly", "true");
+        document.getElementById("text-nominal-nontunai").innerText = formatRupiah(currentTotalBelanja);
+        boxNontunai.classList.remove("hidden");
+      } else {
+        inputBayar.removeAttribute("readonly");
+        boxNontunai.classList.add("hidden");
+      }
+      hitungKembalian();
     }
 
     function hitungKembalian() {
@@ -358,7 +377,6 @@
       let metode = document.getElementById("select-metode").value;
       
       if(metode !== "Cash") { 
-        document.getElementById("input-bayar").value = currentTotalBelanja; 
         lbl.innerText = "Rp 0"; 
         lbl.className = "text-xl font-mono font-bold text-emerald-600";
         return; 
@@ -374,47 +392,82 @@
       }
     }
 
-    document.getElementById("select-metode").addEventListener("change", hitungKembalian);
-
     function prosesSelesaiTransaksi() {
       if(keranjangBelanja.length === 0) return;
       let bayar = parseFloat(document.getElementById("input-bayar").value) || 0;
       let metode = document.getElementById("select-metode").value;
       if(metode === "Cash" && bayar < currentTotalBelanja) { alert("Uang pembayaran kurang!"); return; }
 
-      let payload = { 
+      // Penyusunan data payload untuk disimpan dan dicetak pada struk
+      dataTransaksiTerakhir = { 
         idTransaksi: currentTrxId, 
         totalBelanja: currentTotalBelanja, 
         metodePembayaran: metode, 
         uangBayar: bayar, 
         uangKembalian: metode === "Cash" ? bayar - currentTotalBelanja : 0, 
-        cart: keranjangBelanja 
+        tanggal: new Date().toLocaleDateString('id-ID'),
+        cart: [...keranjangBelanja]
       };
       
       showLoadingModal("Menyimpan", "Mengirim data transaksi ke Google Sheets...");
 
-      fetch(API_URL, { method: "POST", body: JSON.stringify(payload) })
+      fetch(API_URL, { method: "POST", body: JSON.stringify(dataTransaksiTerakhir) })
         .then(res => res.json())
         .then(res => {
           if(res.success) {
-            showSuccessModal("Berhasil!", res.message);
+            showSuccessTransaksiModal("Transaksi Berhasil!", "Data telah aman disimpan di Cloud Google Sheets.");
             keranjangBelanja = []; 
             document.getElementById("input-bayar").value = "";
+            document.getElementById("box-konfirmasi-nontunai").classList.add("hidden");
             muatDataAwal();
-          } else { 
-            showErrorModal("Gagal Menyimpan", res.message); 
-          }
-        }).catch(err => {
-          console.error(err);
-          showErrorModal("Error", "Gagal mengirim data. Pastikan setelan Deploy akses ke 'Anyone'.");
-        });
+          } else { showErrorModal("Gagal Menyimpan", res.message); }
+        }).catch(err => { showErrorModal("Error", "Gagal menghubungkan ke server."); });
     }
 
     function formatRupiah(n) { return "Rp " + Number(n).toLocaleString('id-ID'); }
-    function showLoadingModal(t, m) { document.getElementById("modal-icon").innerHTML = '<i class="fa-solid fa-circle-notch animate-spin text-indigo-600"></i>'; document.getElementById("modal-title").innerText = t; document.getElementById("modal-message").innerText = m; document.getElementById("modal-btn-close").classList.add("hidden"); document.getElementById("modal-status").style.display = "flex"; }
-    function showSuccessModal(t, m) { document.getElementById("modal-icon").innerHTML = '<i class="fa-solid fa-circle-check text-emerald-500"></i>'; document.getElementById("modal-title").innerText = t; document.getElementById("modal-message").innerText = m; document.getElementById("modal-btn-close").classList.remove("hidden"); document.getElementById("modal-status").style.display = "flex"; }
-    function showErrorModal(t, m) { document.getElementById("modal-icon").innerHTML = '<i class="fa-solid fa-circle-xmark text-rose-500"></i>'; document.getElementById("modal-title").innerText = t; document.getElementById("modal-message").innerText = m; document.getElementById("modal-btn-close").classList.remove("hidden"); document.getElementById("modal-status").style.display = "flex"; }
+    function showLoadingModal(t, m) { document.getElementById("modal-icon").innerHTML = '<i class="fa-solid fa-circle-notch animate-spin text-indigo-600"></i>'; document.getElementById("modal-title").innerText = t; document.getElementById("modal-message").innerText = m; document.getElementById("modal-btn-close").classList.add("hidden"); document.getElementById("modal-btn-cetak").classList.add("hidden"); document.getElementById("modal-status").style.display = "flex"; }
+    function showErrorModal(t, m) { document.getElementById("modal-icon").innerHTML = '<i class="fa-solid fa-circle-xmark text-rose-500"></i>'; document.getElementById("modal-title").innerText = t; document.getElementById("modal-message").innerText = m; document.getElementById("modal-btn-close").classList.remove("hidden"); document.getElementById("modal-btn-cetak").classList.add("hidden"); document.getElementById("modal-status").style.display = "flex"; }
+    
+    // Tampilan khusus popup sukses agar langsung bisa cetak struk belanjaan
+    function showSuccessTransaksiModal(t, m) {
+      document.getElementById("modal-icon").innerHTML = '<i class="fa-solid fa-circle-check text-emerald-500"></i>';
+      document.getElementById("modal-title").innerText = t;
+      document.getElementById("modal-message").innerText = m;
+      document.getElementById("modal-btn-close").classList.remove("hidden");
+      document.getElementById("modal-btn-cetak").classList.remove("hidden");
+      document.getElementById("modal-status").style.display = "flex";
+    }
+    
     function tutupModal() { document.getElementById("modal-status").style.display = "none"; }
+
+    // FITUR REVISI: Membuat fungsi render data cetak ke struk thermal 58mm
+    function cetakStrukFisik() {
+      if(!dataTransaksiTerakhir) return;
+      
+      document.getElementById("st-id").innerText = dataTransaksiTerakhir.idTransaksi;
+      document.getElementById("st-tgl").innerText = dataTransaksiTerakhir.tanggal;
+      document.getElementById("st-metode").innerText = dataTransaksiTerakhir.metodePembayaran;
+      document.getElementById("st-total").innerText = formatRupiah(dataTransaksiTerakhir.totalBelanja);
+      document.getElementById("st-bayar").innerText = formatRupiah(dataTransaksiTerakhir.uangBayar);
+      document.getElementById("st-kembali").innerText = formatRupiah(dataTransaksiTerakhir.uangKembalian);
+      
+      const stItems = document.getElementById("st-items");
+      stItems.innerHTML = "";
+      dataTransaksiTerakhir.cart.forEach(item => {
+        let tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td colspan="2" class="pt-1">${item.nama}</td>
+          <tr>
+            <td class="text-slate-500">${item.qty} x ${formatRupiah(item.harga)}</td>
+            <td class="text-right font-bold">${formatRupiah(item.subtotal)}</td>
+          </tr>
+        `;
+        stItems.appendChild(tr);
+      });
+      
+      // Membuka perintah print bawaan sistem operasi (Windows/Android/iOS)
+      window.print();
+    }
   </script>
 </body>
 </html>
